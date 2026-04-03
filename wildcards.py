@@ -10,6 +10,7 @@ from common import (
     format_seconds,
     highest_rank_number_available,
     is_blacklisted,
+    find_time_for_points_threshold,
 )
 
 
@@ -42,6 +43,9 @@ def build_wildcards(
                 continue
             jackpot_roi = max(jackpot_roi, float(points_value) / (time_value / 60.0))
 
+        t500 = find_time_for_points_threshold(snapshot, 500.0)
+        t700 = find_time_for_points_threshold(snapshot, 700.0)
+
         reason_bits = []
         if is_super_popular:
             reason_bits.append(f"super popular (n={snapshot.n})")
@@ -66,6 +70,9 @@ def build_wildcards(
                         f"You have no run; {'; '.join(reason_bits)}. "
                         f"best top-4 ROI is {jackpot_roi:.1f} pts/min."
                     ),
+                    "t500": t500,
+                    "t700": t700,
+                    "t4": snapshot.t4,
                 },
             )
         )

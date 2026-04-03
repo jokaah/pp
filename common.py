@@ -570,3 +570,9 @@ def print_wildcards_section(items: list[dict]) -> None:
     print("\n=== WILDCARDS ===")
     for index, item in enumerate(items, start=1):
         print(f"{index:>2}. {item['game']} - {item['why']}")
+        print(
+            f"    csv: {item['game']},"
+            f"{csv_time(item.get('t500'))},"
+            f"{csv_time(item.get('t700'))},"
+            f"{csv_time(item.get('t4'))}"
+        )
