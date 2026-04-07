@@ -542,28 +542,50 @@ def print_improvement_section(picks: list[ScoredPick]) -> None:
     print("\n=== IMPROVEMENT PICKS ===")
     for index, pick in enumerate(picks, start=1):
         snapshot = pick.snapshot
+
+        t500 = find_time_for_points_threshold(snapshot, 500.0)
+        t700 = find_time_for_points_threshold(snapshot, 700.0)
         t100 = time_for_gain(snapshot, 100.0)
         t200 = time_for_gain(snapshot, 200.0)
-        print(f"{index:>2}. {snapshot.game}")
+
+        podium_hits = pick.extra.get("podium_hits") or []
         penalty_note = ""
-        if pick.extra.get("both_goals_need_top3"):
+        if podium_hits:
             penalty_note = (
-                f"  penalty=-{pick.extra.get('top3_penalty', 0.0) * 100:.0f} "
-                f"(both +100 and +200 need top 3)"
+                f" penalty=-{(pick.extra.get('podium_penalty', 0.0) * 100):.0f}"
+                f" ({', '.join(podium_hits)} need podium)"
             )
+
+        pct100 = pick.extra.get("pct_for_100")
+        pct200 = pick.extra.get("pct_for_200")
+        pct100_str = "N/A" if pct100 is None else f"{pct100 * 100:.2f}%"
+        pct200_str = "N/A" if pct200 is None else f"{pct200 * 100:.2f}%"
+
+        print(f"{index:>2}. {snapshot.game}")
         print(
-            f"    score={pick.score:.2f}{penalty_note}  you: rank={snapshot.my_rank}  "
-            f"pts={snapshot.my_points:.1f}  time={format_seconds(snapshot.my_time)}  "
-            f"runners={snapshot.n}  WR={format_seconds(snapshot.t1)}"
+            f"    score={pick.score:.2f}{penalty_note} you: rank={snapshot.my_rank} "
+            f"pts={snapshot.my_points:.1f} time={format_seconds(snapshot.my_time)} "
+            f"runners={snapshot.n} WR={format_seconds(snapshot.t1)}"
         )
         print(
-            f"    targets: +100={format_seconds(t100)}"
-            f" (rank {pick.extra.get('rank_for_100') if pick.extra.get('rank_for_100') is not None else 'N/A'})"
-            f"  +200={format_seconds(t200)}"
-            f" (rank {pick.extra.get('rank_for_200') if pick.extra.get('rank_for_200') is not None else 'N/A'})"
-            f"  #4={format_seconds(snapshot.t4)}"
+            f"    targets: 500={format_seconds(t500)}"
+            f" (rank {pick.extra.get('rank_for_500') if pick.extra.get('rank_for_500') is not None else 'N/A'})"
+            f" 700={format_seconds(t700)}"
+            f" (rank {pick.extra.get('rank_for_700') if pick.extra.get('rank_for_700') is not None else 'N/A'})"
+            f" +100={format_seconds(t100)}"
+            f" (rank {pick.extra.get('rank_for_100') if pick.extra.get('rank_for_100') is not None else 'N/A'}, need {pct100_str})"
+            f" +200={format_seconds(t200)}"
+            f" (rank {pick.extra.get('rank_for_200') if pick.extra.get('rank_for_200') is not None else 'N/A'}, need {pct200_str})"
+            f" #4={format_seconds(snapshot.t4)}"
         )
-        print(f"    csv: {snapshot.game},{csv_time(t100)},{csv_time(t200)},{csv_time(snapshot.t4)}")
+        print(
+            f"    csv: {snapshot.game},"
+            f"{csv_time(t500) if pick.extra.get('rank_for_500') is not None else ''},"
+            f"{csv_time(t700) if pick.extra.get('rank_for_700') is not None else ''},"
+            f"{csv_time(t100) if pick.extra.get('rank_for_100') is not None else ''},"
+            f"{csv_time(t200) if pick.extra.get('rank_for_200') is not None else ''},"
+            f"{csv_time(snapshot.t4)}"
+        )
 
 
 def print_wildcards_section(items: list[dict]) -> None:
