@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Speedrun leaderboard monthly picker (refactored split version)
 """
@@ -16,6 +17,7 @@ from common import (
     print_improvement_section,
     print_new_game_section,
     print_wildcards_section,
+    load_game_links,
 )
 from improvements import score_improvement_picks
 from new_games import score_new_game_picks
@@ -52,7 +54,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=50,
         help="Hard filter: ignore runs >= this many minutes",
     )
-    parser.add_argument("--top-new", type=int, default=25, help="How many new game picks to show")
+    parser.add_argument(
+        "--top-new",
+        type=int,
+        default=25,
+        help="How many new game picks to show",
+    )
     parser.add_argument(
         "--top-improve",
         type=int,
@@ -89,6 +96,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path("./blacklist.txt"),
         help="Optional text file of exact game names to exclude",
     )
+    parser.add_argument(
+        "--csv",
+        action="store_true",
+        help="Output CSV rows only (no human-readable text)",
+    )
     return parser
 
 
@@ -100,8 +112,8 @@ def main() -> int:
 
     cur_games, cur_runs = load_snapshot(args.current, max_run_seconds=max_run_seconds)
     cur_snapshots = build_game_snapshots(cur_runs, my_names_casefold=my_names)
-
     blacklist = load_blacklist(args.blacklist)
+    game_links = load_game_links() if args.csv else None
 
     prev_snapshots = None
     if args.previous is not None:
@@ -130,20 +142,21 @@ def main() -> int:
     new_picks, improve_picks, wildcards = dedupe_picks(new_picks, improve_picks, wildcards)
     wildcards = wildcards[: args.top_wild]
 
-    print(f"[OK] Current snapshot: {args.current.expanduser().resolve()}")
-    print(f"[i] Current games detected: {len(cur_games)}")
-    print(f"[i] Current runs parsed (after >= {args.max_minutes}min filter): {len(cur_runs)}")
-    print(f"[i] Games where you have a run: {sum(1 for snapshot in cur_snapshots.values() if snapshot.has_me)}")
-    if blacklist:
-        print(f"[i] Blacklisted exact-name matches: {len(blacklist)}")
+    if not args.csv:
+        print(f"[OK] Current snapshot: {args.current.expanduser().resolve()}")
+        print(f"[i] Current games detected: {len(cur_games)}")
+        print(f"[i] Current runs parsed (after >= {args.max_minutes}min filter): {len(cur_runs)}")
+        print(f"[i] Games where you have a run: {sum(1 for snapshot in cur_snapshots.values() if snapshot.has_me)}")
+        if blacklist:
+            print(f"[i] Blacklisted exact-name matches: {len(blacklist)}")
+        if args.previous is not None:
+            print(f"[OK] Previous snapshot: {args.previous.expanduser().resolve()}")
+            print(f"[i] Previous games detected: {len(prev_snapshots) if prev_snapshots is not None else 0}")
 
-    if args.previous is not None:
-        print(f"[OK] Previous snapshot: {args.previous.expanduser().resolve()}")
-        print(f"[i] Previous games detected: {len(prev_snapshots) if prev_snapshots is not None else 0}")
+    print_new_game_section(new_picks, csv_only=args.csv, game_links=game_links)
+    print_improvement_section(improve_picks, csv_only=args.csv, game_links=game_links)
+    print_wildcards_section(wildcards, csv_only=args.csv, game_links=game_links)
 
-    print_new_game_section(new_picks)
-    print_improvement_section(improve_picks)
-    print_wildcards_section(wildcards)
     return 0
 
 
