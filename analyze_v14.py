@@ -44,9 +44,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--my-name",
-        action="append",
-        default=["Joka"],
-        help="Your player name(s). Repeatable.",
+        type=str,
+        default="Joka",
+        help="Your player name",
     )
     parser.add_argument(
         "--max-minutes",
@@ -108,7 +108,8 @@ def main() -> int:
     args = build_arg_parser().parse_args()
 
     max_run_seconds = int(args.max_minutes * 60)
-    my_names = {name.strip().casefold() for name in args.my_name if name and name.strip()}
+    my_names = {args.my_name.strip().casefold()}
+    print(f"Runner(s): {my_names}")
 
     cur_games, cur_runs = load_snapshot(args.current, max_run_seconds=max_run_seconds)
     cur_snapshots = build_game_snapshots(cur_runs, my_names_casefold=my_names)
