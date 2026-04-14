@@ -21,7 +21,7 @@ from common import (
 )
 from improvements import score_improvement_picks
 from new_games import score_new_game_picks
-from wildcards import build_wildcards
+from wildcards import build_wildcards, make_seed
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -138,6 +138,7 @@ def main() -> int:
         wr_points_floor=args.wild_wr_points,
         popular_floor=args.wild_popular,
         blacklist=blacklist,
+        seed=make_seed(args.current, args.previous),
     )
 
     new_picks, improve_picks, wildcards = dedupe_picks(new_picks, improve_picks, wildcards)
