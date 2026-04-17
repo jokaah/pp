@@ -127,6 +127,21 @@ def csv_time(seconds: Optional[float]) -> str:
     return f"'{s}" if s != "N/A" else "'N/A"
 
 
+def normalize_game_name(name: str) -> str:
+    if not name:
+        return name
+
+    name = name.strip()
+
+    # Handle ", The", ", A", ", An"
+    for article in ("The", "A", "An"):
+        suffix = f", {article}"
+        if name.endswith(suffix):
+            base = name[: -len(suffix)].strip()
+            return f"{article} {base}"
+
+    return name
+
 def to_float(value: str) -> Optional[float]:
     if value is None:
         return None
@@ -137,6 +152,24 @@ def to_float(value: str) -> Optional[float]:
         return float(stripped)
     except ValueError:
         return None
+
+
+def load_game_links(path: Path = Path("./games.csv")) -> dict[str, str]:
+    links = {}
+
+    if not path.exists():
+        return links
+
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = row.get("NES Game") or row.get("game")
+            link = row.get("Relevant Link") or row.get("link")
+
+            if name and link:
+                links[name.strip()] = link.strip()
+
+    return links
 
 
 def parse_rank(value: str) -> Optional[int]:
@@ -507,8 +540,9 @@ def dedupe_picks(
     return new_output, improvement_output, wildcard_output
 
 
-def print_new_game_section(picks: list[ScoredPick]) -> None:
+def print_new_game_section(picks: list[ScoredPick], csv_only: bool = False, game_links: dict[str, str] | None = None) -> None:
     print("\n=== NEW GAME PICKS ===")
+
     for index, pick in enumerate(picks, start=1):
         snapshot = pick.snapshot
         t500 = pick.extra.get("t500")
@@ -520,14 +554,24 @@ def print_new_game_section(picks: list[ScoredPick]) -> None:
         safety500 = pick.extra.get("safety500")
         tail_depth = pick.extra.get("tail_depth")
 
+        link = ""
+        if game_links:
+            link = game_links.get(snapshot.game, "")
+
+        csv_row = f"{normalize_game_name(snapshot.game)},{csv_time(t500)},{csv_time(t700)},{csv_time(snapshot.t4)},{link}"
+
+        if csv_only:
+            print(csv_row)
+            continue
+
         print(f"{index:>2}. {snapshot.game}")
         print(
-            f"    score={pick.score:.2f}  runners={snapshot.n}  "
-            f"runner_growth(prev)={growth_str}  WR={format_seconds(snapshot.t1)}"
+            f"    score={pick.score:.2f} runners={snapshot.n} "
+            f"runner_growth(prev)={growth_str} WR={format_seconds(snapshot.t1)}"
         )
         print(
-            f"    times: 500+={format_seconds(t500)}  "
-            f"700+={format_seconds(t700)}  #4={format_seconds(snapshot.t4)}"
+            f"    times: 500+={format_seconds(t500)} "
+            f"700+={format_seconds(t700)} #4={format_seconds(snapshot.t4)}"
         )
         print(
             f"    analysis: 500@rank {r500 if r500 is not None else 'N/A'} | "
@@ -535,44 +579,87 @@ def print_new_game_section(picks: list[ScoredPick]) -> None:
             f"tail {tail_depth} runners | "
             f"headroom_to_4 {pick.extra.get('investment_headroom', 0.0):+.1f} pts"
         )
-        print(f"    csv: {snapshot.game},{csv_time(t500)},{csv_time(t700)},{csv_time(snapshot.t4)}")
 
 
-def print_improvement_section(picks: list[ScoredPick]) -> None:
+def print_improvement_section(picks: list[ScoredPick], csv_only: bool = False, game_links: dict[str, str] | None = None) -> None:
     print("\n=== IMPROVEMENT PICKS ===")
+
     for index, pick in enumerate(picks, start=1):
         snapshot = pick.snapshot
+        t500 = find_time_for_points_threshold(snapshot, 500.0)
+        t700 = find_time_for_points_threshold(snapshot, 700.0)
         t100 = time_for_gain(snapshot, 100.0)
         t200 = time_for_gain(snapshot, 200.0)
-        print(f"{index:>2}. {snapshot.game}")
+
+        podium_hits = pick.extra.get("podium_hits") or []
         penalty_note = ""
-        if pick.extra.get("both_goals_need_top3"):
+        if podium_hits:
             penalty_note = (
-                f"  penalty=-{pick.extra.get('top3_penalty', 0.0) * 100:.0f} "
-                f"(both +100 and +200 need top 3)"
+                f" penalty=-{(pick.extra.get('podium_penalty', 0.0) * 100):.0f}"
+                f" ({', '.join(podium_hits)} need podium)"
             )
+
+        pct100 = pick.extra.get("pct_for_100")
+        pct200 = pick.extra.get("pct_for_200")
+        pct100_str = "N/A" if pct100 is None else f"{pct100 * 100:.2f}%"
+        pct200_str = "N/A" if pct200 is None else f"{pct200 * 100:.2f}%"
+
+        link = ""
+        if game_links:
+            link = game_links.get(snapshot.game, "")
+
+        csv_row = (
+            f"{normalize_game_name(snapshot.game)},"
+            f"{csv_time(snapshot.my_time)},"
+            f"{csv_time(t500) if pick.extra.get('rank_for_500') is not None else ''},"
+            f"{csv_time(t700) if pick.extra.get('rank_for_700') is not None else ''},"
+            f"{csv_time(t100) if pick.extra.get('rank_for_100') is not None else ''},"
+            f"{csv_time(t200) if pick.extra.get('rank_for_200') is not None else ''},"
+            f"{csv_time(snapshot.t4)},"
+            f"{link}"
+        )
+
+        if csv_only:
+            print(csv_row)
+            continue
+
+        print(f"{index:>2}. {snapshot.game}")
         print(
-            f"    score={pick.score:.2f}{penalty_note}  you: rank={snapshot.my_rank}  "
-            f"pts={snapshot.my_points:.1f}  time={format_seconds(snapshot.my_time)}  "
-            f"runners={snapshot.n}  WR={format_seconds(snapshot.t1)}"
+            f"    score={pick.score:.2f}{penalty_note} you: rank={snapshot.my_rank} "
+            f"pts={snapshot.my_points:.1f} time={format_seconds(snapshot.my_time)} "
+            f"runners={snapshot.n} WR={format_seconds(snapshot.t1)}"
         )
         print(
-            f"    targets: +100={format_seconds(t100)}"
-            f" (rank {pick.extra.get('rank_for_100') if pick.extra.get('rank_for_100') is not None else 'N/A'})"
-            f"  +200={format_seconds(t200)}"
-            f" (rank {pick.extra.get('rank_for_200') if pick.extra.get('rank_for_200') is not None else 'N/A'})"
-            f"  #4={format_seconds(snapshot.t4)}"
+            f"    targets: 500={format_seconds(t500)}"
+            f" (rank {pick.extra.get('rank_for_500') if pick.extra.get('rank_for_500') is not None else 'N/A'})"
+            f" 700={format_seconds(t700)}"
+            f" (rank {pick.extra.get('rank_for_700') if pick.extra.get('rank_for_700') is not None else 'N/A'})"
+            f" +100={format_seconds(t100)}"
+            f" (rank {pick.extra.get('rank_for_100') if pick.extra.get('rank_for_100') is not None else 'N/A'}, need {pct100_str})"
+            f" +200={format_seconds(t200)}"
+            f" (rank {pick.extra.get('rank_for_200') if pick.extra.get('rank_for_200') is not None else 'N/A'}, need {pct200_str})"
+            f" #4={format_seconds(snapshot.t4)}"
         )
-        print(f"    csv: {snapshot.game},{csv_time(t100)},{csv_time(t200)},{csv_time(snapshot.t4)}")
 
 
-def print_wildcards_section(items: list[dict]) -> None:
+def print_wildcards_section(items: list[dict], csv_only: bool = False, game_links: dict[str, str] | None = None) -> None:
     print("\n=== WILDCARDS ===")
+
     for index, item in enumerate(items, start=1):
-        print(f"{index:>2}. {item['game']} - {item['why']}")
-        print(
-            f"    csv: {item['game']},"
+        link = ""
+        if game_links:
+            link = game_links.get(item["game"], "")
+
+        csv_row = (
+            f"{normalize_game_name(item['game'])},"
             f"{csv_time(item.get('t500'))},"
             f"{csv_time(item.get('t700'))},"
-            f"{csv_time(item.get('t4'))}"
+            f"{csv_time(item.get('t4'))},"
+            f"{link}"
         )
+
+        if csv_only:
+            print(csv_row)
+            continue
+
+        print(f"{index:>2}. {item['game']} - {item['why']}")
