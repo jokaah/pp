@@ -17,6 +17,7 @@ from common import (
     print_improvement_section,
     print_new_game_section,
     print_wildcards_section,
+    print_my_runs_section,
     load_game_links,
 )
 from improvements import score_improvement_picks
@@ -101,6 +102,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output CSV rows only (no human-readable text)",
     )
+    parser.add_argument(
+        "--list-my-runs",
+        action="store_true",
+        help="List all my current runs ordered by points",
+    )
     return parser
 
 
@@ -113,6 +119,12 @@ def main() -> int:
 
     cur_games, cur_runs = load_snapshot(args.current, max_run_seconds=max_run_seconds)
     cur_snapshots = build_game_snapshots(cur_runs, my_names_casefold=my_names)
+
+    if args.list_my_runs:
+        game_links = load_game_links() if args.csv else None
+        print_my_runs_section(cur_snapshots, csv_only=args.csv, game_links=game_links)
+        return 0
+
     blacklist = load_blacklist(args.blacklist)
     game_links = load_game_links() if args.csv else None
 

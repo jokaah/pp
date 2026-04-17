@@ -663,3 +663,46 @@ def print_wildcards_section(items: list[dict], csv_only: bool = False, game_link
             continue
 
         print(f"{index:>2}. {item['game']} - {item['why']}")
+
+
+def print_my_runs_section(
+    snapshots: dict[str, GameSnapshot],
+    csv_only: bool = False,
+    game_links: dict[str, str] | None = None,
+) -> None:
+    runs = [
+        snapshot
+        for snapshot in snapshots.values()
+        if snapshot.has_me
+        and snapshot.my_points is not None
+        and snapshot.my_rank is not None
+    ]
+    runs.sort(key=lambda s: (-s.my_points, s.my_rank, normalize_game_name(s.game)))
+
+    if not csv_only:
+        print("\n=== MY CURRENT RUNS (BY POINTS) ===")
+
+    for index, snapshot in enumerate(runs, start=1):
+        link = ""
+        if game_links:
+            link = game_links.get(snapshot.game, "")
+
+        csv_row = (
+            f"{normalize_game_name(snapshot.game)},"
+            f"{snapshot.my_points:.1f},"
+            f"{snapshot.my_rank},"
+            f"{csv_time(snapshot.my_time)},"
+            f"{link}"
+        )
+        if csv_only:
+            print(csv_row)
+            continue
+
+        print(
+            f"{index:>2}. {snapshot.game} | "
+            f"{snapshot.my_points:.1f} pts | "
+            f"#{snapshot.my_rank} | "
+            f"{format_seconds(snapshot.my_time)}"
+        )
+        if link:
+            print(f"    {link}")
