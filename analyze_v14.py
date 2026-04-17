@@ -80,7 +80,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--wild-popular",
         type=int,
-        default=50,
+        default=60,
         help="Wildcard rule: popular runners floor",
     )
     parser.add_argument(
