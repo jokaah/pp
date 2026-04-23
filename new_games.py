@@ -55,6 +55,8 @@ def score_new_game_picks(
     comp14_vals: list[float] = []
     comp410_vals: list[float] = []
     invest_vals: list[float] = []
+    gap500_pct_vals: list[float] = []
+    gap700_pct_vals: list[float] = []
     n_max = max((snapshot.n for snapshot in candidates), default=1)
 
     for snapshot in candidates:
@@ -66,6 +68,11 @@ def score_new_game_picks(
             roi500_vals.append(500.0 / (t500 / 60.0))
         if t700 is not None and t700 > 0:
             roi700_vals.append(700.0 / (t700 / 60.0))
+
+        if t500 is not None and snapshot.t1 is not None and snapshot.t1 > 0:
+            gap500_pct_vals.append((t500 - snapshot.t1) / snapshot.t1)
+        if t700 is not None and snapshot.t1 is not None and snapshot.t1 > 0:
+            gap700_pct_vals.append((t700 - snapshot.t1) / snapshot.t1)
         if snapshot.p4 is not None:
             buffer500_vals.append(float(snapshot.p4) - 500.0)
             invest_vals.append(max(0.0, float(snapshot.p4) - 500.0))
@@ -93,6 +100,8 @@ def score_new_game_picks(
         comp14_vals,
         comp410_vals,
         invest_vals,
+        gap500_pct_vals,
+        gap700_pct_vals,
     ):
         values.sort()
 
@@ -117,6 +126,20 @@ def score_new_game_picks(
         gap500_to_4_bonus = clamp01(gap500_to_4 / 4.0) if gap500_to_4 is not None else 0.0
 
         immediate_roi = clamp01(0.68 * roi500 + 0.22 * roi700 + 0.10 * gap500_to_4_bonus)
+
+        gap500_pct = (
+            (t500 - snapshot.t1) / snapshot.t1
+            if t500 is not None and snapshot.t1 is not None and snapshot.t1 > 0
+            else None
+        )
+        gap700_pct = (
+            (t700 - snapshot.t1) / snapshot.t1
+            if t700 is not None and snapshot.t1 is not None and snapshot.t1 > 0
+            else None
+        )
+        gap500_norm = percentile_rank(gap500_pct_vals, gap500_pct) if gap500_pct is not None and gap500_pct_vals else 0.0
+        gap700_norm = percentile_rank(gap700_pct_vals, gap700_pct) if gap700_pct is not None and gap700_pct_vals else 0.0
+        headroom_bonus = clamp01(0.35 * gap500_norm + 0.65 * gap700_norm)
 
         buffer500 = (float(snapshot.p4) - 500.0) if snapshot.p4 is not None else -9999.0
         buffer500_norm = percentile_rank(buffer500_vals, buffer500) if buffer500_vals else 0.0
@@ -150,10 +173,11 @@ def score_new_game_picks(
             rank_difficulty_penalty += 0.05
 
         final_score01 = clamp01(
-            0.35 * immediate_roi
+            0.31 * immediate_roi
             + 0.25 * stability
             + 0.20 * future_value
             + 0.20 * (1.0 - risk_penalty)
+            + 0.04 * headroom_bonus
             - rank_difficulty_penalty
         )
 
@@ -174,6 +198,7 @@ def score_new_game_picks(
                     "immediate_roi": immediate_roi,
                     "stability": stability,
                     "future_value": future_value,
+                    "headroom_bonus": headroom_bonus,
                     "risk_penalty": risk_penalty,
                     "investment_headroom": invest,
                 },
