@@ -177,7 +177,7 @@ def score_new_game_picks(
             + 0.25 * stability
             + 0.20 * future_value
             + 0.20 * (1.0 - risk_penalty)
-            + 0.04 * headroom_bonus
+            + 0.12 * headroom_bonus
             - rank_difficulty_penalty
         )
 
