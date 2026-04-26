@@ -83,6 +83,27 @@ def drawtext(
     )
 
 
+def wrap_words(text, max_chars=16):
+    words = text.split()
+    lines = []
+    current = ""
+
+    for word in words:
+        next_line = f"{current} {word}".strip()
+
+        if len(next_line) <= max_chars:
+            current = next_line
+        else:
+            if current:
+                lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+
+    return lines
+
+
 def pop_text(text, x, y, fontsize, main_color="white", accent_color="yellow"):
     """
     Layered text:
@@ -136,22 +157,32 @@ def fancy_text(text, x, y, fontsize, main_color="white"):
     ]
 
 
-def build_vf(game_name, run_time):
+def build_vf(game_name, run_time, accent_color):
     output_w, output_h = OUTPUT_SIZE
-
     text_filters = []
-    text_filters += pop_text(
-        game_name,
-        x="70",
-        y="70",
-        fontsize=100,
-        main_color="white",
-        accent_color="yellow",
-    )
+
+    title_lines = wrap_words(game_name, max_chars=16)
+
+    title_y = 70
+    title_fontsize = 100
+    title_line_spacing = 95
+
+    for i, line in enumerate(title_lines):
+        text_filters += pop_text(
+            line,
+            x="70",
+            y=str(title_y + i * title_line_spacing),
+            fontsize=title_fontsize,
+            main_color="white",
+            accent_color=accent_color,
+        )
+
+    subtitle_y = title_y + len(title_lines) * title_line_spacing + 5
+
     text_filters += fancy_text(
         "Speedrun",
         x="80",
-        y="160",
+        y=str(subtitle_y),
         fontsize=70,
         main_color="white",
     )
@@ -197,9 +228,9 @@ def extract_random_frames(video_path, temp_dir, count):
     return frame_paths
 
 
-def make_thumbnails(video_path, game_name, run_time, output_dir, count):
+def make_thumbnails(video_path, game_name, run_time, output_dir, count, accent_color):
     output_dir.mkdir(parents=True, exist_ok=True)
-    vf = build_vf(game_name, run_time)
+    vf = build_vf(game_name, run_time, accent_color)
 
     with tempfile.TemporaryDirectory() as temp:
         temp_dir = Path(temp)
@@ -230,6 +261,7 @@ def parse_args():
     parser.add_argument("video", help="Path to the input .mkv video")
     parser.add_argument("game", help="Game name, e.g. Contra")
     parser.add_argument("time", help="Run time, e.g. 10:28")
+    parser.add_argument("accent", nargs="?", default="yellow", help="Accent color (default: yellow)")
 
     parser.add_argument("-n", "--count", type=int, default=5, help="Number of thumbnails to generate")
     parser.add_argument("-o", "--output-dir", default="thumbnails", help="Output directory")
@@ -239,13 +271,15 @@ def parse_args():
 
 def main():
     args = parse_args()
+    full_path = args.video if ":/" in args.video else f"C:/Users/Joka/Documents/{args.video}"
 
     make_thumbnails(
-        video_path=Path(args.video),
+        video_path=Path(full_path),
         game_name=args.game,
         run_time=args.time,
         output_dir=Path(args.output_dir),
         count=args.count,
+        accent_color=args.accent,
     )
 
 
