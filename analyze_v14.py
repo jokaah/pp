@@ -23,6 +23,7 @@ from common import (
 from improvements import score_improvement_picks
 from new_games import score_new_game_picks
 from wildcards import build_wildcards, make_seed
+from passive_points import calculate_point_changes, print_point_changes_section
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -103,6 +104,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Output CSV rows only (no human-readable text)",
     )
     parser.add_argument(
+        "--mode",
+        choices=("all", "passive", "normal"),
+        default="normal",
+        help="Run mode: normal or point changes only (all or passive)",
+    )
+    parser.add_argument(
         "--list-my-runs",
         action="store_true",
         help="List all my current runs ordered by points",
@@ -132,6 +139,18 @@ def main() -> int:
     if args.previous is not None:
         _, prev_runs = load_snapshot(args.previous, max_run_seconds=max_run_seconds)
         prev_snapshots = build_game_snapshots(prev_runs, my_names_casefold=my_names)
+
+    if args.mode == "passive" or args.mode == "all":
+        if prev_snapshots is None:
+            raise SystemExit("--mode passive/all requires --previous")
+        point_changes = calculate_point_changes(
+            cur_snapshots,
+            prev_snapshots,
+            blacklist=blacklist,
+            mode=args.mode,
+        )
+        print_point_changes_section(point_changes, csv_only=args.csv, mode=args.mode)
+        return 0
 
     new_picks = score_new_game_picks(
         cur_snapshots,
