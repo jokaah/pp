@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import shutil
 import subprocess
@@ -157,7 +158,7 @@ def fancy_text(text, x, y, fontsize, main_color="white"):
     ]
 
 
-def build_vf(game_name, run_time, accent_color):
+def build_vf(game_name, run_time, accent_color, gamma, blur):
     output_w, output_h = OUTPUT_SIZE
     text_filters = []
 
@@ -197,8 +198,8 @@ def build_vf(game_name, run_time, accent_color):
     filters = [
         f"crop={CROP['width']}:{CROP['height']}:{CROP['x']}:{CROP['y']}",
         f"scale={output_w}:{output_h}",
-        "gblur=sigma=2",
-        "eq=gamma=0.6:contrast=0.9",
+        f"gblur=sigma={blur}",
+        f"eq=gamma={gamma}:contrast=0.9",
         *text_filters,
     ]
 
@@ -228,9 +229,9 @@ def extract_random_frames(video_path, temp_dir, count):
     return frame_paths
 
 
-def make_thumbnails(video_path, game_name, run_time, output_dir, count, accent_color):
+def make_thumbnails(video_path, game_name, run_time, output_dir, count, accent_color, gamma, blur):
     output_dir.mkdir(parents=True, exist_ok=True)
-    vf = build_vf(game_name, run_time, accent_color)
+    vf = build_vf(game_name, run_time, accent_color, gamma, blur)
 
     with tempfile.TemporaryDirectory() as temp:
         temp_dir = Path(temp)
@@ -255,6 +256,29 @@ def make_thumbnails(video_path, game_name, run_time, output_dir, count, accent_c
     # tempfile automatically deletes the temporary frame images here
 
 
+def is_dir_open(path):
+    path = str(Path(path).resolve())
+    ps = f"""
+$shell = New-Object -ComObject Shell.Application
+$target = [System.IO.Path]::GetFullPath('{path}')
+foreach ($window in $shell.Windows()) {{
+    try {{
+        if ([System.IO.Path]::GetFullPath($window.Document.Folder.Self.Path) -eq $target) {{
+            exit 0
+        }}
+    }} catch {{}}
+}}
+exit 1
+"""
+    return subprocess.run(["powershell", "-NoProfile", "-Command", ps]).returncode == 0
+
+
+def open_dir_if_not_open(path):
+    path = Path(path).resolve()
+    if os.name == "nt" and not is_dir_open(path):
+        subprocess.Popen(["explorer", str(path)])
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate speedrun thumbnails from an MKV video.")
 
@@ -264,6 +288,8 @@ def parse_args():
     parser.add_argument("accent", nargs="?", default="yellow", help="Accent color (default: yellow)")
 
     parser.add_argument("-n", "--count", type=int, default=5, help="Number of thumbnails to generate")
+    parser.add_argument("-g", "--gamma", type=float, default=0.6, help="Gamma (default: 0.6)")
+    parser.add_argument("-b", "--blur", type=int, default=2, help="Blur (default: 2)")
     parser.add_argument("-o", "--output-dir", default="thumbnails", help="Output directory")
 
     return parser.parse_args()
@@ -272,15 +298,20 @@ def parse_args():
 def main():
     args = parse_args()
     full_path = args.video if ":/" in args.video else f"C:/Users/Joka/Documents/{args.video}"
+    output_dir = Path(args.output_dir)
 
     make_thumbnails(
         video_path=Path(full_path),
         game_name=args.game,
         run_time=args.time,
-        output_dir=Path(args.output_dir),
+        output_dir=output_dir,
         count=args.count,
         accent_color=args.accent,
+        gamma=args.gamma,
+        blur=args.blur,
     )
+
+    open_dir_if_not_open(output_dir)
 
 
 if __name__ == "__main__":

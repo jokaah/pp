@@ -31,9 +31,13 @@ def calculate_point_changes(
         if previous.has_me and previous.my_points is not None:
             previous_points = previous.my_points
 
-        if not current.has_me or (not previous.has_me and mode == "passive"):
-            continue
-        if current.my_points is None or (previous.my_points is None and mode == "passive"):
+        if mode == "passive":
+            if previous_points == 0:
+                continue
+            if not previous.my_time == current.my_time:
+                continue
+
+        if not current.has_me or current.my_points is None:
             continue
 
         changes.append(

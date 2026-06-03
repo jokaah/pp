@@ -1,5 +1,4 @@
 Tetris
-Tetris 2
 Spot: The Video Game
 Monopoly
 Yoshi
@@ -8,7 +7,8 @@ Duck Hunt
 Donkey Kong 3
 Urban Champion
 Wheel of Fortune
-Break Time: The National Pool Tour
 Renegade
 Little Mermaid, The
 Millipede
+Tecmo Bowl
+Anticipation
