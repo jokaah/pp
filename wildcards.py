@@ -7,18 +7,50 @@ from typing import Optional
 
 from common import (
     GameSnapshot,
-    count_wr_ties,
     deterministic_tiebreak,
     format_seconds,
-    highest_rank_number_available,
     is_blacklisted,
     find_time_for_points_threshold,
+    safe_log_norm,
 )
 
 
-def make_seed(a: str, b: str) -> int:
-    h = hashlib.sha256(f"{a}||{b}".encode("utf-8")).digest()
-    return int.from_bytes(h[:8], "big")  # 64-bit integer
+def make_seed(current: object, previous: object | None = None) -> int:
+    """Stable monthly seed based on the --current input string.
+
+    previous is accepted for backwards-compatible call sites, but intentionally
+    ignored so changing/omitting --previous does not reshuffle the month's picks.
+    """
+    h = hashlib.sha256(str(current).encode("utf-8")).digest()
+    return int.from_bytes(h[:8], "big")
+
+
+def _weighted_sample_without_replacement(
+    items: list[dict],
+    weights: list[float],
+    k: int,
+    rng: random.Random,
+) -> list[dict]:
+    pool = list(zip(items, weights))
+    selected: list[dict] = []
+
+    while pool and len(selected) < k:
+        total = sum(max(0.0, weight) for _, weight in pool)
+        if total <= 0:
+            index = rng.randrange(len(pool))
+        else:
+            pick = rng.uniform(0.0, total)
+            running = 0.0
+            index = len(pool) - 1
+            for i, (_, weight) in enumerate(pool):
+                running += max(0.0, weight)
+                if running >= pick:
+                    index = i
+                    break
+        item, _ = pool.pop(index)
+        selected.append(item)
+
+    return selected
 
 
 def build_wildcards(
@@ -28,120 +60,80 @@ def build_wildcards(
     popular_floor: int,
     seed: int,
     blacklist: Optional[set[str]] = None,
+    exclude_games: Optional[set[str]] = None,
+    max_seconds: int = 30 * 60,
+    count: int = 10,
 ) -> list[dict]:
+    """Build seeded random wildcard picks.
+
+    Wildcards are intentionally different from the scored sections: take all
+    short games where you have no run, remove already-picked games, weight the
+    pool slightly by popularity, then draw without replacement using the monthly
+    seed.
+    """
     blacklist = blacklist or set()
+    exclude_games = exclude_games or set()
     rng = random.Random(seed)
 
-    candidates = []
-    random_pool = []
-
+    base_candidates: list[GameSnapshot] = []
     for snapshot in cur.values():
         if snapshot.has_me or is_blacklisted(snapshot.game, blacklist):
             continue
+        if snapshot.game in exclude_games:
+            continue
+        if snapshot.t4 is None or snapshot.t4 <= 0 or snapshot.t4 >= max_seconds:
+            continue
+        # Wildcards should still be capable of meaningful points: rank #4
+        # must be worth at least 400 points.
+        if snapshot.p4 is None or float(snapshot.p4) < 400.0:
+            continue
+        base_candidates.append(snapshot)
 
-        wr_ties = count_wr_ties(snapshot)
-        is_super_popular = snapshot.n >= popular_floor
-        has_big_wr_tie = wr_ties >= 4
+    if not base_candidates:
+        return []
 
-        jackpot_roi = 0.0
-        for rank in range(1, min(4, highest_rank_number_available(snapshot)) + 1):
-            time_value = snapshot.by_rank_time.get(rank)
-            points_value = snapshot.by_rank_points.get(rank)
-            if time_value is None or points_value is None or time_value <= 0:
-                continue
-            jackpot_roi = max(jackpot_roi, float(points_value) / (time_value / 60.0))
+    n_max = max((snapshot.n for snapshot in base_candidates), default=1)
+    items: list[dict] = []
+    weights: list[float] = []
+
+    for snapshot in base_candidates:
+        popularity = safe_log_norm(snapshot.n, n_max)
+
+        # Keep the popularity influence mild: popular games are more likely, but
+        # small games can still get pulled from the hat.
+        weight = 1.0 + (1.75 * popularity)
+
+        # Prefer games where a short #4 is not just short, but also meaningful.
+        p4 = snapshot.by_rank_points.get(4)
+        if p4 is not None:
+            weight *= 1.0 + min(0.50, max(0.0, float(p4) - 500.0) / 700.0)
+
+        # Tiny deterministic jitter prevents too many identical weights while
+        # still keeping the main draw seeded by the current input.
+        jitter_seed = hashlib.sha256(f"{seed}|{snapshot.game}".encode("utf-8")).digest()
+        jitter = 0.90 + (int.from_bytes(jitter_seed[:4], "big") / 0xFFFFFFFF) * 0.20
+        weight *= jitter
 
         t500 = find_time_for_points_threshold(snapshot, 500.0)
         t700 = find_time_for_points_threshold(snapshot, 700.0)
-
-        score = (
-            0.55 * (1.0 if is_super_popular else 0.0)
-            + 0.30 * min(1.0, wr_ties / 6.0)
-            + 0.15 * math.log(jackpot_roi + 1.0)
+        items.append(
+            {
+                "game": snapshot.game,
+                "why": (
+                    "Seeded weighted wildcard. You have no run; "
+                    f"#4 takes {format_seconds(snapshot.t4)}"
+                    f" for {p4:.0f} pts; " if p4 is not None else
+                    "Seeded weighted wildcard. You have no run; "
+                    f"#4 takes {format_seconds(snapshot.t4)}; "
+                ) + f"runners={snapshot.n}; draw weight={weight:.2f}.",
+                "score": weight,
+                "t500": t500,
+                "t700": t700,
+                "t4": snapshot.t4,
+            }
         )
+        weights.append(weight)
 
-        # Separate random pool:
-        # - at least 500 points possible for 4th placement
-        # - 4th place time less than 30 minutes
-        t4 = snapshot.t4
-        p4 = snapshot.by_rank_points.get(4)
-        if (
-            t4 is not None
-            and t4 > 0
-            and t4 < 30 * 60
-            and p4 is not None
-            and p4 >= 500.0
-        ):
-            random_pool.append(
-                {
-                    "game": snapshot.game,
-                    "why": (
-                        "Random wildcard. You have no run; "
-                        f"4th place is worth {p4:.0f} pts and takes {format_seconds(t4)}. "
-                        f"reference score: {score:.3f}."
-                    ),
-                    "score": score,
-                    "t500": t500,
-                    "t700": t700,
-                    "t4": t4,
-                }
-            )
-
-        if not (is_super_popular or has_big_wr_tie):
-            continue
-
-        reason_bits = []
-        if is_super_popular:
-            reason_bits.append(f"super popular (n={snapshot.n})")
-        if has_big_wr_tie:
-            reason_bits.append(f"{wr_ties} players tied on WR time {format_seconds(snapshot.t1)}")
-
-        candidates.append(
-            (
-                score,
-                is_super_popular,
-                wr_ties,
-                jackpot_roi,
-                {
-                    "game": snapshot.game,
-                    "why": (
-                        f"You have no run; {'; '.join(reason_bits)}. "
-                        f"best top-4 ROI is {jackpot_roi:.1f} pts/min. "
-                        f"score: {score:.3f}."
-                    ),
-                    "score": score,
-                    "t500": t500,
-                    "t700": t700,
-                    "t4": snapshot.t4,
-                },
-            )
-        )
-
-    candidates.sort(
-        key=lambda item: (
-            -item[0],
-            -int(item[1]),
-            -item[2],
-            -item[3],
-            deterministic_tiebreak(item[4]["game"]),
-        )
-    )
-
-    random_selected = rng.sample(random_pool, k=min(2, len(random_pool)))
-    random_selected_games = {item["game"] for item in random_selected}
-
-    ranked_selected = [
-        item[4] for item in candidates
-        if item[4]["game"] not in random_selected_games
-    ]
-
-    # Merge and sort everything by score (descending)
-    final = random_selected + ranked_selected
-    final.sort(
-        key=lambda item: (
-            -item["score"],
-            deterministic_tiebreak(item["game"]),
-        )
-    )
-
-    return final
+    selected = _weighted_sample_without_replacement(items, weights, count, rng)
+    selected.sort(key=lambda item: (deterministic_tiebreak(f"{seed}|{item['game']}")))
+    return selected

@@ -163,6 +163,7 @@ def main() -> int:
         top_n=args.top_improve,
         blacklist=blacklist,
     )
+    already_picked_games = {pick.game for pick in improve_picks} | {pick.game for pick in new_picks}
     wildcards = build_wildcards(
         cur_snapshots,
         low_runner_cap=args.wild_low_runners,
@@ -170,6 +171,8 @@ def main() -> int:
         popular_floor=args.wild_popular,
         blacklist=blacklist,
         seed=make_seed(args.current, args.previous),
+        exclude_games=already_picked_games,
+        count=args.top_wild,
     )
 
     new_picks, improve_picks, wildcards = dedupe_picks(new_picks, improve_picks, wildcards)

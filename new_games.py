@@ -57,6 +57,8 @@ def score_new_game_picks(
     invest_vals: list[float] = []
     gap500_pct_vals: list[float] = []
     gap700_pct_vals: list[float] = []
+    r500_vals: list[float] = []
+    r700_vals: list[float] = []
     n_max = max((snapshot.n for snapshot in candidates), default=1)
 
     for snapshot in candidates:
@@ -68,6 +70,11 @@ def score_new_game_picks(
             roi500_vals.append(500.0 / (t500 / 60.0))
         if t700 is not None and t700 > 0:
             roi700_vals.append(700.0 / (t700 / 60.0))
+        if r500 is not None:
+            r500_vals.append(float(r500))
+        r700_for_access = find_easiest_rank_with_points(snapshot, 700.0)
+        if r700_for_access is not None:
+            r700_vals.append(float(r700_for_access))
 
         if t500 is not None and snapshot.t1 is not None and snapshot.t1 > 0:
             gap500_pct_vals.append((t500 - snapshot.t1) / snapshot.t1)
@@ -102,6 +109,8 @@ def score_new_game_picks(
         invest_vals,
         gap500_pct_vals,
         gap700_pct_vals,
+        r500_vals,
+        r700_vals,
     ):
         values.sort()
 
@@ -140,6 +149,15 @@ def score_new_game_picks(
         gap500_norm = percentile_rank(gap500_pct_vals, gap500_pct) if gap500_pct is not None and gap500_pct_vals else 0.0
         gap700_norm = percentile_rank(gap700_pct_vals, gap700_pct) if gap700_pct is not None and gap700_pct_vals else 0.0
         headroom_bonus = clamp01(0.35 * gap500_norm + 0.65 * gap700_norm)
+        value_gap = clamp01(0.30 * gap500_norm + 0.70 * gap700_norm)
+
+        # Accessibility is deliberately different from ROI. It rewards games
+        # where strong point totals are available at reasonably deep ranks,
+        # even if the run is not ultra-short. This better matches the current
+        # state of the grind, where pure points-per-minute is less useful than
+        # leaderboard opportunity.
+        r500_norm = percentile_rank(r500_vals, float(r500)) if r500 is not None and r500_vals else 0.0
+        r700_norm = percentile_rank(r700_vals, float(r700)) if r700 is not None and r700_vals else 0.0
 
         buffer500 = (float(snapshot.p4) - 500.0) if snapshot.p4 is not None else -9999.0
         buffer500_norm = percentile_rank(buffer500_vals, buffer500) if buffer500_vals else 0.0
@@ -158,7 +176,10 @@ def score_new_game_picks(
 
         invest = max(0.0, float(snapshot.p4) - 500.0) if snapshot.p4 is not None else 0.0
         invest_norm = percentile_rank(invest_vals, invest) if invest_vals else 0.0
-        future_value = clamp01(0.38 * growth_norm + 0.32 * tail_norm + 0.18 * runners_norm + 0.12 * invest_norm)
+        future_value = clamp01(0.34 * growth_norm + 0.28 * tail_norm + 0.26 * runners_norm + 0.12 * invest_norm)
+        popularity_score = runners_norm
+        accessibility = clamp01(0.45 * r500_norm + 0.25 * r700_norm + 0.20 * tail_norm + 0.10 * runners_norm)
+        prestige = clamp01(0.60 * runners_norm + 0.40 * tail_norm)
 
         comp_14 = compression_ratio(snapshot.t1, snapshot.t4)
         comp_410 = compression_ratio(snapshot.t4, time_at_rank(snapshot, 10))
@@ -173,11 +194,14 @@ def score_new_game_picks(
             rank_difficulty_penalty += 0.05
 
         final_score01 = clamp01(
-            0.31 * immediate_roi
-            + 0.25 * stability
-            + 0.20 * future_value
-            + 0.20 * (1.0 - risk_penalty)
-            + 0.12 * headroom_bonus
+            0.10 * immediate_roi
+            + 0.18 * accessibility
+            + 0.17 * stability
+            + 0.13 * future_value
+            + 0.12 * (1.0 - risk_penalty)
+            + 0.14 * popularity_score
+            + 0.12 * value_gap
+            + 0.04 * prestige
             - rank_difficulty_penalty
         )
 
@@ -199,6 +223,10 @@ def score_new_game_picks(
                     "stability": stability,
                     "future_value": future_value,
                     "headroom_bonus": headroom_bonus,
+                    "value_gap": value_gap,
+                    "accessibility": accessibility,
+                    "popularity_score": popularity_score,
+                    "prestige": prestige,
                     "risk_penalty": risk_penalty,
                     "investment_headroom": invest,
                 },
