@@ -179,6 +179,18 @@ def score_new_game_picks(
         future_value = clamp01(0.34 * growth_norm + 0.28 * tail_norm + 0.26 * runners_norm + 0.12 * invest_norm)
         popularity_score = runners_norm
         accessibility = clamp01(0.45 * r500_norm + 0.25 * r700_norm + 0.20 * tail_norm + 0.10 * runners_norm)
+
+        # Human-opportunity intentionally goes a little wild. It answers the
+        # question: "does this look like a good board to enter?" rather than
+        # "is this the fastest possible point farm?" Deep 500/700 ranks and a
+        # fat WR-to-scoring-position gap are allowed to overpower weak
+        # points-per-minute.
+        human_opportunity = clamp01(
+            0.42 * clamp01((float(r500) if r500 is not None else 0.0) / 24.0)
+            + 0.34 * clamp01((float(r700) if r700 is not None else 0.0) / 10.0)
+            + 0.18 * value_gap
+            + 0.06 * clamp01((buffer500 - 250.0) / 250.0)
+        )
         prestige = clamp01(0.60 * runners_norm + 0.40 * tail_norm)
 
         comp_14 = compression_ratio(snapshot.t1, snapshot.t4)
@@ -194,44 +206,47 @@ def score_new_game_picks(
             rank_difficulty_penalty += 0.05
 
         final_score01 = clamp01(
-            0.10 * immediate_roi
-            + 0.18 * accessibility
-            + 0.17 * stability
-            + 0.13 * future_value
-            + 0.12 * (1.0 - risk_penalty)
-            + 0.14 * popularity_score
-            + 0.12 * value_gap
-            + 0.04 * prestige
+            0.11 * immediate_roi
+            + 0.11 * accessibility
+            + 0.07 * stability
+            + 0.02 * future_value
+            + 0.03 * (1.0 - risk_penalty)
+            + 0.04 * popularity_score
+            + 0.24 * value_gap
+            + 0.38 * human_opportunity
             - rank_difficulty_penalty
         )
 
-        picks.append(
-            ScoredPick(
-                game=snapshot.game,
-                score=round(final_score01 * 100.0, 2),
-                snapshot=snapshot,
-                extra={
-                    "r500": r500,
-                    "t500": t500,
-                    "r700": r700,
-                    "t700": t700,
-                    "buffer500": buffer500,
-                    "safety500": int(safety500),
-                    "tail_depth": int(tail),
-                    "growth": growth,
-                    "immediate_roi": immediate_roi,
-                    "stability": stability,
-                    "future_value": future_value,
-                    "headroom_bonus": headroom_bonus,
-                    "value_gap": value_gap,
-                    "accessibility": accessibility,
-                    "popularity_score": popularity_score,
-                    "prestige": prestige,
-                    "risk_penalty": risk_penalty,
-                    "investment_headroom": invest,
-                },
+        tSanity = t700 or t500 or 0
+        if tSanity <= (30 * 60):
+            picks.append(
+                ScoredPick(
+                    game=snapshot.game,
+                    score=round(final_score01 * 100.0, 2),
+                    snapshot=snapshot,
+                    extra={
+                        "r500": r500,
+                        "t500": t500,
+                        "r700": r700,
+                        "t700": t700,
+                        "buffer500": buffer500,
+                        "safety500": int(safety500),
+                        "tail_depth": int(tail),
+                        "growth": growth,
+                        "immediate_roi": immediate_roi,
+                        "stability": stability,
+                        "future_value": future_value,
+                        "headroom_bonus": headroom_bonus,
+                        "value_gap": value_gap,
+                        "accessibility": accessibility,
+                        "human_opportunity": human_opportunity,
+                        "popularity_score": popularity_score,
+                        "prestige": prestige,
+                        "risk_penalty": risk_penalty,
+                        "investment_headroom": invest,
+                    },
+                )
             )
-        )
 
     picks.sort(
         key=lambda pick: (
