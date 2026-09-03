@@ -48,7 +48,7 @@ def _normalized_percent_score(sorted_values: list[float], pct_needed: Optional[f
 
 def score_improvement_picks(
     cur: dict[str, GameSnapshot],
-    top_n: int,
+    top_n: Optional[int],
     blacklist: Optional[set[str]] = None,
 ) -> list[ScoredPick]:
     blacklist = blacklist or set()
@@ -177,4 +177,4 @@ def score_improvement_picks(
             deterministic_tiebreak(pick.game),
         )
     )
-    return filtered[:top_n]
+    return filtered if top_n is None else filtered[:top_n]

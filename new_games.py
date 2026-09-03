@@ -23,7 +23,7 @@ from common import (
 def score_new_game_picks(
     cur: dict[str, GameSnapshot],
     prev: Optional[dict[str, GameSnapshot]],
-    top_n: int,
+    top_n: Optional[int],
     blacklist: Optional[set[str]] = None,
 ) -> list[ScoredPick]:
     blacklist = blacklist or set()
@@ -257,4 +257,4 @@ def score_new_game_picks(
             deterministic_tiebreak(pick.game),
         )
     )
-    return picks[:top_n]
+    return picks if top_n is None else picks[:top_n]

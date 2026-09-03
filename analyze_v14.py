@@ -13,12 +13,16 @@ from common import (
     build_game_snapshots,
     dedupe_picks,
     load_blacklist,
+    load_whitelist,
     load_snapshot,
     print_improvement_section,
     print_new_game_section,
     print_wildcards_section,
     print_my_runs_section,
     load_game_links,
+    ScoredPick,
+    find_easiest_rank_with_points,
+    find_time_for_points_threshold,
 )
 from improvements import score_improvement_picks
 from new_games import score_new_game_picks
@@ -117,6 +121,109 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+
+def _categorize_whitelist(whitelist: set[str], snapshots) -> tuple[list[str], list[str], list[str]]:
+    """Split whitelisted games into NEW vs IMPROVEMENT based on whether I have a run."""
+    snapshot_by_key = {game.casefold(): snapshot for game, snapshot in snapshots.items()}
+    new_games: list[str] = []
+    improve_games: list[str] = []
+    missing: list[str] = []
+
+    for requested in sorted(whitelist):
+        snapshot = snapshot_by_key.get(requested.casefold())
+        if snapshot is None:
+            missing.append(requested)
+        elif snapshot.has_me:
+            improve_games.append(snapshot.game)
+        else:
+            new_games.append(snapshot.game)
+
+    return new_games, improve_games, missing
+
+
+def _forced_placeholder(snapshot, category: str) -> ScoredPick:
+    if category == "new":
+        r500 = find_easiest_rank_with_points(snapshot, 500.0)
+        r700 = find_easiest_rank_with_points(snapshot, 700.0)
+        return ScoredPick(
+            game=snapshot.game,
+            score=0.0,
+            snapshot=snapshot,
+            extra={
+                "r500": r500,
+                "t500": find_time_for_points_threshold(snapshot, 500.0),
+                "r700": r700,
+                "t700": find_time_for_points_threshold(snapshot, 700.0),
+                "buffer500": (float(snapshot.p4) - 500.0) if snapshot.p4 is not None else 0.0,
+                "safety500": 0,
+                "tail_depth": max(0, snapshot.n - r500) if r500 is not None else 0,
+                "growth": None,
+                "investment_headroom": max(0.0, float(snapshot.p4) - 500.0) if snapshot.p4 is not None else 0.0,
+                "forced": True,
+                "natural_rank": None,
+            },
+        )
+
+    return ScoredPick(
+        game=snapshot.game,
+        score=0.0,
+        snapshot=snapshot,
+        extra={
+            "below_500": bool(snapshot.my_points is not None and snapshot.my_points < 500.0),
+            "below_700": bool(snapshot.my_points is not None and snapshot.my_points < 700.0),
+            "rank_for_500": None,
+            "rank_for_700": None,
+            "rank_for_100": None,
+            "rank_for_200": None,
+            "pct_for_100": None,
+            "pct_for_200": None,
+            "podium_hits": [],
+            "podium_penalty": 0.0,
+            "forced": True,
+            "natural_rank": None,
+        },
+    )
+
+
+def _merge_forced_picks(
+    ranked: list[ScoredPick],
+    top_n: int,
+    forced_games: list[str],
+    snapshots,
+    category: str,
+) -> tuple[list[ScoredPick], list[str]]:
+    selected = list(ranked[:top_n])
+    selected_by_key = {pick.game.casefold(): pick for pick in selected}
+    ranked_by_key = {pick.game.casefold(): (index, pick) for index, pick in enumerate(ranked, start=1)}
+    snapshot_by_key = {game.casefold(): snapshot for game, snapshot in snapshots.items()}
+    warnings: list[str] = []
+
+    for requested in forced_games:
+        key = requested.casefold()
+        ranked_entry = ranked_by_key.get(key)
+        if ranked_entry is not None:
+            natural_rank, pick = ranked_entry
+            pick.extra["forced"] = True
+            pick.extra["natural_rank"] = natural_rank
+            if key not in selected_by_key:
+                selected.append(pick)
+                selected_by_key[key] = pick
+            continue
+
+        snapshot = snapshot_by_key.get(key)
+        if snapshot is None:
+            warnings.append(f'{category}: "{requested}" was not found in the current snapshot')
+            continue
+
+        pick = _forced_placeholder(snapshot, category)
+        if key not in selected_by_key:
+            selected.append(pick)
+            selected_by_key[key] = pick
+        warnings.append(f'{category}: "{snapshot.game}" is normally filtered out, so it has no natural rank')
+
+    return selected, warnings
+
+
 def main() -> int:
     args = build_arg_parser().parse_args()
 
@@ -133,6 +240,7 @@ def main() -> int:
         return 0
 
     blacklist = load_blacklist(args.blacklist)
+    whitelist = load_whitelist(Path("./whitelist.txt"))
     game_links = load_game_links() if args.csv else None
 
     prev_snapshots = None
@@ -152,16 +260,26 @@ def main() -> int:
         print_point_changes_section(point_changes, csv_only=args.csv, mode=args.mode)
         return 0
 
-    new_picks = score_new_game_picks(
+    always_new, always_improve, whitelist_missing = _categorize_whitelist(whitelist, cur_snapshots)
+    # A whitelisted game must be considered even if it also appears in blacklist.txt.
+    scoring_blacklist = blacklist - whitelist
+
+    all_new_picks = score_new_game_picks(
         cur_snapshots,
         prev_snapshots,
-        top_n=args.top_new,
-        blacklist=blacklist,
+        top_n=None,
+        blacklist=scoring_blacklist,
     )
-    improve_picks = score_improvement_picks(
+    all_improve_picks = score_improvement_picks(
         cur_snapshots,
-        top_n=args.top_improve,
-        blacklist=blacklist,
+        top_n=None,
+        blacklist=scoring_blacklist,
+    )
+    new_picks, new_warnings = _merge_forced_picks(
+        all_new_picks, args.top_new, always_new, cur_snapshots, "new"
+    )
+    improve_picks, improve_warnings = _merge_forced_picks(
+        all_improve_picks, args.top_improve, always_improve, cur_snapshots, "improvement"
     )
     already_picked_games = {pick.game for pick in improve_picks} | {pick.game for pick in new_picks}
     wildcards = build_wildcards(
@@ -185,9 +303,15 @@ def main() -> int:
         print(f"[i] Games where you have a run: {sum(1 for snapshot in cur_snapshots.values() if snapshot.has_me)}")
         if blacklist:
             print(f"[i] Blacklisted exact-name matches: {len(blacklist)}")
+        if whitelist:
+            print(f"[i] Whitelisted exact-name matches: {len(whitelist) - len(whitelist_missing)}")
         if args.previous is not None:
             print(f"[OK] Previous snapshot: {args.previous.expanduser().resolve()}")
             print(f"[i] Previous games detected: {len(prev_snapshots) if prev_snapshots is not None else 0}")
+        for game in whitelist_missing:
+            print(f'[!] Whitelist: "{game}" was not found in the current snapshot')
+        for warning in new_warnings + improve_warnings:
+            print(f"[!] Whitelist: {warning}")
 
     print_new_game_section(new_picks, csv_only=args.csv, game_links=game_links)
     print_improvement_section(improve_picks, csv_only=args.csv, game_links=game_links)

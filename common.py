@@ -418,6 +418,19 @@ def load_blacklist(path: Optional[Path]) -> set[str]:
     }
 
 
+
+def load_whitelist(path: Path) -> set[str]:
+    """Load exact game names from whitelist.txt; a missing file means no whitelist."""
+    resolved = path.expanduser().resolve()
+    if not resolved.exists():
+        return set()
+    text = resolved.read_text(encoding="utf-8-sig")
+    return {
+        line.strip().casefold()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
 def is_blacklisted(game: str, blacklist: set[str]) -> bool:
     return game.strip().casefold() in blacklist
 
@@ -564,7 +577,12 @@ def print_new_game_section(picks: list[ScoredPick], csv_only: bool = False, game
             print(csv_row)
             continue
 
-        print(f"{index:>2}. {snapshot.game}")
+        forced_note = ""
+        if pick.extra.get("forced"):
+            natural_rank = pick.extra.get("natural_rank")
+            rank_text = f"#{natural_rank}" if natural_rank is not None else "N/A (normally filtered out)"
+            forced_note = f" [WHITELIST; natural rank {rank_text}]"
+        print(f"{index:>2}. {snapshot.game}{forced_note}")
         print(
             f"    score={pick.score:.2f} runners={snapshot.n} "
             f"runner_growth(prev)={growth_str} WR={format_seconds(snapshot.t1)}"
@@ -623,10 +641,16 @@ def print_improvement_section(picks: list[ScoredPick], csv_only: bool = False, g
             print(csv_row)
             continue
 
-        print(f"{index:>2}. {snapshot.game}")
+        forced_note = ""
+        if pick.extra.get("forced"):
+            natural_rank = pick.extra.get("natural_rank")
+            rank_text = f"#{natural_rank}" if natural_rank is not None else "N/A (normally filtered out)"
+            forced_note = f" [WHITELIST; natural rank {rank_text}]"
+        print(f"{index:>2}. {snapshot.game}{forced_note}")
+        my_points_str = "N/A" if snapshot.my_points is None else f"{snapshot.my_points:.1f}"
         print(
-            f"    score={pick.score:.2f}{penalty_note} you: rank={snapshot.my_rank} "
-            f"pts={snapshot.my_points:.1f} time={format_seconds(snapshot.my_time)} "
+            f"    score={pick.score:.2f}{penalty_note} you: rank={snapshot.my_rank if snapshot.my_rank is not None else 'N/A'} "
+            f"pts={my_points_str} time={format_seconds(snapshot.my_time)} "
             f"runners={snapshot.n} WR={format_seconds(snapshot.t1)}"
         )
         print(

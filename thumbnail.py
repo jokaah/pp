@@ -48,7 +48,7 @@ def escape_drawtext_text(text):
         text
         .replace("\\", "\\\\")
         .replace(":", "\\:")
-        .replace("'", "\\'")
+        .replace("'", "'\\\\\\''")
         .replace(",", "\\,")
     )
 
@@ -239,7 +239,7 @@ def make_thumbnails(video_path, game_name, run_time, output_dir, count, accent_c
         frames = extract_random_frames(video_path, temp_dir, count)
 
         for index, frame_path in enumerate(frames, start=1):
-            safe_game = game_name.lower().replace(" ", "_")
+            safe_game = game_name.lower().replace(" ", "_").replace("'", "_").replace(":", "")
             safe_time = run_time.replace(":", "_")
             output_path = output_dir / f"{safe_game}_{safe_time}_{index}.png"
 
