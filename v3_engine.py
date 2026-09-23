@@ -142,6 +142,11 @@ def analyze_new_games(snapshots, current_average: float, blacklist: set[str]) ->
         # dense (Mario's Time Machine / Sesame Street Countdown).
         if target_700 is not None and target_700.time <= 10 * 60 and target_700.rank >= 4:
             item.quick_score = min(100.0, item.quick_score + 8.0)
+        # An enormous rank-4-to-15 spread in a tiny game is a warning about
+        # volatile execution, not evidence that the top score is easy.
+        if snapshot.t15 is not None and snapshot.t15 < 5 * 60:
+            volatility = _clamp((snapshot.spread15_ratio - 0.65) / 0.75)
+            item.quick_score = max(0.0, item.quick_score - 18.0 * volatility)
 
         commitment_time = target_700.time if target_700 is not None else item.sweet.time
         length_fit = _clamp(1.0 - max(0.0, commitment_time - 20 * 60) / (20 * 60))
@@ -151,7 +156,7 @@ def analyze_new_games(snapshots, current_average: float, blacklist: set[str]) ->
         # Popularity is evidence of significance, not an unlimited bonus.
         meaningful_board = _clamp(math.log1p(snapshot.n) / math.log1p(150))
         overcrowding = _clamp((snapshot.n - 200) / 200.0) * _clamp((commitment_time - 15 * 60) / (20 * 60))
-        item.grind_score = 100 * _clamp(
+        item.grind_score = 100 * (
             0.25 * grind_prize
             + 0.25 * item.durable_700
             + 0.18 * meaningful_board
@@ -168,11 +173,18 @@ def analyze_new_games(snapshots, current_average: float, blacklist: set[str]) ->
             and 6 * 60 <= target_700.time <= 18 * 60
             and 55 <= snapshot.n <= 180
         ):
-            item.grind_score = min(100.0, item.grind_score + 12.0)
+            item.grind_score += 12.0
+        # A deeper 700 and distributed gaps are sturdier than a rank-four
+        # prize, even when both boards have similar headline points.
+        if target_700 is not None and 6 * 60 <= target_700.time <= 18 * 60:
+            item.grind_score += 10.0 * _clamp((target_700.rank - 4) / 16.0) + 3.0 * item.softness
         # Extremely short boards are usually Quick territory. They can still
         # Grind well, but no longer dominate merely through enormous spread.
         if commitment_time < 4 * 60:
             item.grind_score = max(0.0, item.grind_score - 12.0)
+        # Keep the displayed score on a 0–100 scale without clipping the
+        # strongest candidates into an arbitrary tie.
+        item.grind_score = _clamp(item.grind_score / 120.0) * 100.0
 
     return raw
 
@@ -213,17 +225,29 @@ def improvement_picks(snapshots, run_count, current_average, blacklist, count=10
 
 
 def _scouting_targets(analysis: Analysis, count=3):
+    # Show achievable point milestones, avoiding a card dominated by nearly
+    # worthless tail ranks. Each target remains an actual leaderboard row.
     targets = sorted(analysis.targets, key=lambda t: t.points)
-    if len(targets) <= count:
-        return targets
-    indices = [round(i * (len(targets) - 1) / (count - 1)) for i in range(count)]
-    return [targets[i] for i in indices]
+    selected = []
+    peak = max(t.points for t in targets)
+    thresholds = (350, 500, 700) if peak >= 700 else (300, 400, 500)
+    for threshold in thresholds:
+        options = [t for t in targets if t.points >= threshold and t not in selected]
+        if options:
+            selected.append(options[0])
+    for target in reversed(targets):
+        if len(selected) >= count:
+            break
+        if target not in selected:
+            selected.append(target)
+    return sorted(selected[:count], key=lambda t: t.points)
 
 
 def wildcard_picks(analyses, excluded, seed_text, count=5):
     # A wildcard without a useful scouting card is just noise. Require enough
     # real non-podium rows to show three distinct goals.
-    pool = [a for a in analyses if a.snapshot.game not in excluded and len(a.targets) >= 3]
+    pool = [a for a in analyses if a.snapshot.game not in excluded
+            and len(a.targets) >= 3 and any(t.points >= 500 for t in a.targets)]
     rng = random.Random(int.from_bytes(hashlib.sha256(seed_text.encode()).digest()[:8], "big"))
     rng.shuffle(pool)
     return [(a, _scouting_targets(a)) for a in pool[:count]]

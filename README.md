@@ -9,6 +9,14 @@ universal score.
 python3 analyze_v3.py -c sep26 -p aug26 --csv v3_report.csv
 ```
 
+The monthly `sep26` and `aug26` snapshot directories are private inputs and
+are not checked into this repository. Put them outside the checkout and pass
+their paths to the report, for example `-c ../snapshots/sep26 -p
+../snapshots/aug26`. The integration tests currently expect `sep26` and
+`aug26` at the checkout root; local symlinks to those external directories
+allow `python3 -m unittest -v test_v3` to run without copying snapshot data
+into Git.
+
 Defaults: 15 Quick Points, 15 Worth Grinding, 10 Improvements, and 5
 Wildcards. Use `--help` to change the counts.
 
