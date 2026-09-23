@@ -6,7 +6,7 @@ universal score.
 ## Run it
 
 ```bash
-python3 analyze_v3.py -c sep26 -p aug26 --csv v3_report.csv
+python3 analyze_v3.py -c ../snapshots/sep26 -p ../snapshots/aug26
 ```
 
 The monthly `sep26` and `aug26` snapshot directories are private inputs and
@@ -42,7 +42,8 @@ genuinely fit both.
 The old scripts remain for comparison. V3 reuses `common.py` for the proven
 spreadsheet parsing and `passive_points.py` for monthly point changes.
 
-The optional CSV is intentionally a minimal overview: category, game, current
-run (for Improvements), 500 goal, 700 goal, suggested goal, and leaderboard
-link. Each game occupies one row, including each Wildcard. Detailed scoring and
-selection explanations stay in the CLI output.
+The CLI prints a compact CSV after the detailed report; `--csv v3_report.csv`
+also saves it. Its columns are category, game, current run (for Improvements),
+goal one, goal two, final goal, and leaderboard link. Wildcards use their three
+scouting goals. Goals at or slower than an existing personal time are blank.
+Each game occupies one row.
