@@ -83,6 +83,7 @@ def _csv_row(section, snapshot, custom_goal, links, include_current=False, scout
         "Category": str(section),
         "Game": str(snapshot.game),
         "Current Run": _current_run_text(snapshot) if include_current else "",
+        "4th Place Time": format_seconds(snapshot.t4) if snapshot.t4 is not None else "",
         "Goal One": goals[0],
         "Goal Two": goals[1],
         "Final Goal": goals[2],
@@ -146,7 +147,7 @@ def main():
         rows.append(_csv_row("WILDCARDS", analysis.snapshot, analysis.sweet, links, scouting=targets))
 
     fields = [
-        "Category", "Game", "Current Run", "Goal One", "Goal Two",
+        "Category", "Game", "Current Run", "4th Place Time", "Goal One", "Goal Two",
         "Final Goal", "Leaderboard Link",
     ]
     print("\n=== CSV ===")
