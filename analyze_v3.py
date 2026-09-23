@@ -3,11 +3,11 @@
 from __future__ import annotations
 import argparse
 import csv
+import sys
 from pathlib import Path
 
 from common import (
     build_game_snapshots,
-    find_easiest_rank_with_points,
     format_seconds,
     load_blacklist,
     load_game_links,
@@ -29,7 +29,7 @@ def parser():
     p.add_argument("--improvements", type=int, default=10)
     p.add_argument("--wildcards", type=int, default=5)
     p.add_argument("--min-improvement", type=float, default=100.0)
-    p.add_argument("--csv", type=Path, help="also write one combined CSV report")
+    p.add_argument("--csv", type=Path, help="also save the CSV printed to the console")
     p.add_argument("--mode", choices=("recommendations", "passive", "all"), default="recommendations")
     return p
 
@@ -46,14 +46,21 @@ def _reason(a, lane):
 
 
 def _goal_text(snapshot, points):
-    rank = find_easiest_rank_with_points(snapshot, points)
-    if rank is None:
-        return "N/A"
+    ranks = [rank for rank, value in snapshot.by_rank_points.items()
+             if rank >= 4 and value >= points]
+    if not ranks:
+        return ""
+    rank = max(ranks)
     time = snapshot.by_rank_time.get(rank)
-    if time is None:
-        return "N/A"
-    podium = " (podium)" if rank <= 3 else ""
-    return f"{points:.0f} pts @ #{rank} in {format_seconds(time)}{podium}"
+    if time is None or (snapshot.my_time is not None and time >= snapshot.my_time):
+        return ""
+    return f"{value:.0f} pts @ #{rank} in {format_seconds(time)}" if (value := snapshot.by_rank_points.get(rank)) else ""
+
+
+def _target_text(snapshot, target):
+    if target is None or target.rank < 4 or (snapshot.my_time is not None and target.time >= snapshot.my_time):
+        return ""
+    return target_summary(target)
 
 
 def _current_run_text(snapshot):
@@ -62,15 +69,23 @@ def _current_run_text(snapshot):
     return f"{snapshot.my_points:.0f} pts @ #{snapshot.my_rank} in {format_seconds(snapshot.my_time)}"
 
 
-def _csv_row(section, snapshot, custom_goal, links, include_current=False):
+def _csv_row(section, snapshot, custom_goal, links, include_current=False, scouting=None):
     """A deliberately tiny overview row, modeled after the old CSV output."""
+    goals = ([_target_text(snapshot, target) for target in scouting] if scouting else [
+        _goal_text(snapshot, 500.0), _goal_text(snapshot, 700.0),
+        _target_text(snapshot, custom_goal),
+    ])
+    # Keep the final suggested goal and omit earlier duplicates.
+    for i in range(2):
+        if goals[i] and goals[i] in goals[i + 1:]:
+            goals[i] = ""
     return {
         "Category": str(section),
         "Game": str(snapshot.game),
         "Current Run": _current_run_text(snapshot) if include_current else "",
-        "500 Goal": _goal_text(snapshot, 500.0),
-        "700 Goal": _goal_text(snapshot, 700.0),
-        "Suggested Goal": target_summary(custom_goal),
+        "Goal One": goals[0],
+        "Goal Two": goals[1],
+        "Final Goal": goals[2],
         "Leaderboard Link": str(links.get(snapshot.game, "")),
     }
 
@@ -128,21 +143,22 @@ def main():
     for i, (analysis, targets) in enumerate(wildcards, 1):
         print(f"{i:>2}. {analysis.snapshot.game} — {analysis.snapshot.n} runners")
         print("    " + " | ".join(target_summary(t) for t in targets))
-        # Wildcards print three scouting goals in the human report, but export
-        # exactly one row. The normal 500/700 columns plus the script's custom
-        # goal provide the compact spreadsheet view.
-        rows.append(_csv_row("WILDCARDS", analysis.snapshot, analysis.sweet, links))
+        rows.append(_csv_row("WILDCARDS", analysis.snapshot, analysis.sweet, links, scouting=targets))
 
+    fields = [
+        "Category", "Game", "Current Run", "Goal One", "Goal Two",
+        "Final Goal", "Leaderboard Link",
+    ]
+    print("\n=== CSV ===")
+    writer = csv.DictWriter(sys.stdout, fieldnames=fields)
+    writer.writeheader()
+    writer.writerows(rows)
     if args.csv:
-        fields = [
-            "Category", "Game", "Current Run", "500 Goal", "700 Goal",
-            "Suggested Goal", "Leaderboard Link",
-        ]
         with args.csv.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
             writer.writerows(rows)
-        print(f"\nCSV written to {args.csv}")
+        print(f"CSV written to {args.csv}")
     return 0
 
 
