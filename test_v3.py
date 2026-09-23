@@ -47,6 +47,14 @@ class V3IntegrationTests(unittest.TestCase):
         self.assertGreater(grind_rank.get("Legend of Zelda, The", 999), 10)
         self.assertLessEqual(quick_rank["Mario's Time Machine"], 15)
         self.assertLessEqual(quick_rank["Sesame Street Countdown"], 30)
+        self.assertGreater(quick_rank["Pinball"], quick_rank["Jackal"])
+
+    def test_wildcard_goals_are_useful_non_podium_milestones(self):
+        quick, grind = ranked_lanes(self.analyses)
+        excluded = {a.snapshot.game for a in quick + grind}
+        picks = wildcard_picks(self.analyses, excluded, "sep26", 5)
+        self.assertTrue(all(all(t.rank >= 4 and t.points >= 300 for t in goals)
+                            for _, goals in picks))
 
     def test_csv_has_one_wildcard_row_per_game_and_goal_columns(self):
         with tempfile.TemporaryDirectory() as directory:
