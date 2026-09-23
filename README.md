@@ -44,6 +44,6 @@ spreadsheet parsing and `passive_points.py` for monthly point changes.
 
 The CLI prints a compact CSV after the detailed report; `--csv v3_report.csv`
 also saves it. Its columns are category, game, current run (for Improvements),
-goal one, goal two, final goal, and leaderboard link. Wildcards use their three
+fourth-place time, goal one, goal two, final goal, and leaderboard link. Wildcards use their three
 scouting goals. Goals at or slower than an existing personal time are blank.
 Each game occupies one row.
