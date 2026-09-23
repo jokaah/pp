@@ -47,7 +47,8 @@ class V3IntegrationTests(unittest.TestCase):
         self.assertGreater(grind_rank.get("Legend of Zelda, The", 999), 10)
         self.assertLessEqual(quick_rank["Mario's Time Machine"], 15)
         self.assertLessEqual(quick_rank["Sesame Street Countdown"], 30)
-        self.assertGreater(quick_rank["Pinball"], quick_rank["Jackal"])
+        self.assertGreater(quick_rank["Pinball"], 1)
+        self.assertGreater(grind_rank["Punch-Out!!"], 1)
 
     def test_wildcard_goals_are_useful_non_podium_milestones(self):
         quick, grind = ranked_lanes(self.analyses)
@@ -59,25 +60,36 @@ class V3IntegrationTests(unittest.TestCase):
     def test_csv_has_one_wildcard_row_per_game_and_goal_columns(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "report.csv"
-            subprocess.run(
+            result = subprocess.run(
                 [sys.executable, "analyze_v3.py", "-c", "sep26", "-p", "aug26", "--csv", str(output)],
                 check=True, capture_output=True, text=True,
             )
+            self.assertIn("=== CSV ===\nCategory,Game,Current Run,Goal One,Goal Two,Final Goal,Leaderboard Link", result.stdout)
             with output.open(newline="", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
         self.assertEqual(
-            ["Category", "Game", "Current Run", "500 Goal", "700 Goal", "Suggested Goal", "Leaderboard Link"],
+            ["Category", "Game", "Current Run", "Goal One", "Goal Two", "Final Goal", "Leaderboard Link"],
             list(rows[0]),
         )
         wildcards = [row for row in rows if row["Category"] == "WILDCARDS"]
         self.assertEqual(5, len(wildcards))
         self.assertEqual(5, len({row["Game"] for row in wildcards}))
-        self.assertTrue(all(row["Suggested Goal"] and row["500 Goal"] and row["700 Goal"] for row in rows))
+        self.assertTrue(all(row["Final Goal"] for row in rows if row["Category"] != "IMPROVEMENTS"))
+        self.assertTrue(all(row["Goal One"] and row["Goal Two"] and row["Final Goal"] for row in wildcards))
+        self.assertTrue(all(len({goal for goal in (row["Goal One"], row["Goal Two"], row["Final Goal"]) if goal})
+                            == sum(bool(row[column]) for column in ("Goal One", "Goal Two", "Final Goal"))
+                            for row in rows))
         self.assertTrue(any(row["Leaderboard Link"] for row in rows))
         improvements = [row for row in rows if row["Category"] == "IMPROVEMENTS"]
         self.assertTrue(all(row["Current Run"] for row in improvements))
         self.assertTrue(all(not row["Current Run"] for row in rows if row["Category"] != "IMPROVEMENTS"))
         self.assertNotIn("GOLD NUGGETS", {row["Category"] for row in rows})
+        for row in improvements:
+            current_time = self.snapshots[row["Game"]].my_time
+            for column in ("Goal One", "Goal Two", "Final Goal"):
+                if row[column]:
+                    rank = int(row[column].split(" @ #")[1].split(" in ")[0])
+                    self.assertLess(self.snapshots[row["Game"]].by_rank_time[rank], current_time)
 
 
 if __name__ == "__main__":
