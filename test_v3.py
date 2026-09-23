@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from common import build_game_snapshots, load_snapshot
+from common import build_game_snapshots, format_seconds, load_snapshot
 from v3_engine import analyze_new_games, improvement_picks, ranked_lanes, wildcard_picks
 
 
@@ -64,11 +64,11 @@ class V3IntegrationTests(unittest.TestCase):
                 [sys.executable, "analyze_v3.py", "-c", "sep26", "-p", "aug26", "--csv", str(output)],
                 check=True, capture_output=True, text=True,
             )
-            self.assertIn("=== CSV ===\nCategory,Game,Current Run,Goal One,Goal Two,Final Goal,Leaderboard Link", result.stdout)
+            self.assertIn("=== CSV ===\nCategory,Game,Current Run,4th Place Time,Goal One,Goal Two,Final Goal,Leaderboard Link", result.stdout)
             with output.open(newline="", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
         self.assertEqual(
-            ["Category", "Game", "Current Run", "Goal One", "Goal Two", "Final Goal", "Leaderboard Link"],
+            ["Category", "Game", "Current Run", "4th Place Time", "Goal One", "Goal Two", "Final Goal", "Leaderboard Link"],
             list(rows[0]),
         )
         wildcards = [row for row in rows if row["Category"] == "WILDCARDS"]
@@ -80,6 +80,8 @@ class V3IntegrationTests(unittest.TestCase):
                             == sum(bool(row[column]) for column in ("Goal One", "Goal Two", "Final Goal"))
                             for row in rows))
         self.assertTrue(any(row["Leaderboard Link"] for row in rows))
+        self.assertTrue(all(row["4th Place Time"] == format_seconds(self.snapshots[row["Game"]].t4)
+                            for row in rows))
         improvements = [row for row in rows if row["Category"] == "IMPROVEMENTS"]
         self.assertTrue(all(row["Current Run"] for row in improvements))
         self.assertTrue(all(not row["Current Run"] for row in rows if row["Category"] != "IMPROVEMENTS"))
