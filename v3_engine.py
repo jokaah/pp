@@ -142,6 +142,8 @@ def analyze_new_games(snapshots, current_average: float, blacklist: set[str]) ->
         # dense (Mario's Time Machine / Sesame Street Countdown).
         if target_700 is not None and target_700.time <= 10 * 60 and target_700.rank >= 4:
             item.quick_score = min(100.0, item.quick_score + 8.0)
+        if target_500 is not None and target_500.time < 5 * 60:
+            item.quick_score = min(100.0, item.quick_score + 7.0)
         # An enormous rank-4-to-15 spread in a tiny game is a warning about
         # volatile execution, not evidence that the top score is easy.
         if snapshot.t15 is not None and snapshot.t15 < 5 * 60:
@@ -182,6 +184,13 @@ def analyze_new_games(snapshots, current_average: float, blacklist: set[str]) ->
         # Grind well, but no longer dominate merely through enormous spread.
         if commitment_time < 4 * 60:
             item.grind_score = max(0.0, item.grind_score - 12.0)
+        # Longer boards with a tight 700 region and small distributed gaps
+        # demand substantial optimization despite an attractive point prize.
+        if target_700 is not None:
+            optimized = (_clamp((target_700.time - 14 * 60) / (2 * 60))
+                         * _clamp((0.12 - target_700.wr_gap) / 0.06)
+                         * _clamp((0.40 - item.softness) / 0.20))
+            item.grind_score -= 12.0 * optimized
         # Keep the displayed score on a 0–100 scale without clipping the
         # strongest candidates into an arbitrary tie.
         item.grind_score = _clamp(item.grind_score / 120.0) * 100.0
